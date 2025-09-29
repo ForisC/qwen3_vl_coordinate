@@ -19,11 +19,11 @@ def get_bbox(image_path, user_input):
 
     client = OpenAI(
         # If the environment variable is not configured, replace the following line with: api_key="sk-xxx"
-        api_key=os.getenv("DASHSCOPE_API_KEY"),
+        api_key=os.getenv("ALIBABACLOUD_API_KEY"),
         base_url="https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
     )
 
-    image_path = Path(r"C:\Users\User\Pictures\screenshot\2025_0929_278.png")
+    image_path = Path(image_path)
     image_base64 = base64.b64encode(image_path.read_bytes()).decode()
 
     completion = client.chat.completions.create(
@@ -75,7 +75,7 @@ def get_bbox(image_path, user_input):
 
 
 
-def draw_bbox(image_path, bbox, ratio=0.5):
+def draw_bbox(image_path, bbox, ratio=0.7):
 
     image = cv2.imread(image_path)
     image = cv2.resize(image, (0, 0), fx=ratio, fy=ratio)
@@ -87,9 +87,22 @@ def draw_bbox(image_path, bbox, ratio=0.5):
     cv2.destroyAllWindows()
 
 
+def save_bbox_image(image_path, bbox, ratio=0.7):
+    new_file_name = Path(image_path).stem + "_with_bbox" + Path(image_path).suffix
+    save_path = Path(image_path).parent / new_file_name
+    image = cv2.imread(image_path)
+    image = cv2.resize(image, (0, 0), fx=ratio, fy=ratio)
+    bbox_resized = [int(coord * ratio) for coord in bbox]
+    x1, y1, x2, y2 = bbox_resized
+    cv2.rectangle(image, (x1, y1), (x2, y2), (0, 255, 0), 2)
+    cv2.imwrite(save_path, image)
+
+
+
 if __name__ == "__main__":
     user_input = "桌面上的 teamviewer icon"
-    user_input_image_path = Path(r".\example\desktop1.png")
+    user_input_image_path = r".\example\desktop1.png"
 
     content_json = get_bbox(user_input_image_path, user_input)
-    draw_bbox(user_input_image_path, content_json["bbox"], 0.7)
+    save_bbox_image(user_input_image_path, content_json["bbox"])
+    draw_bbox(user_input_image_path, content_json["bbox"])
