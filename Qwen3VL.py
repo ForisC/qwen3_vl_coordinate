@@ -1,4 +1,3 @@
-import base64
 import json
 import os
 from pathlib import Path
@@ -6,6 +5,7 @@ from pathlib import Path
 import cv2
 from dotenv import load_dotenv
 from openai import OpenAI
+
 import image_lib
 
 # Load environment variables from .env file
@@ -58,7 +58,7 @@ class Qwen3VL:
         # {
         #   "bbox": [46, 659, 82, 731],
         #   "name": "TeamViewer icon",
-        #   "description": "位於桌面左下角區域的 TeamViewer 應用程式圖示，具有藍色背景與白色雙箭頭標誌，下方標註「TeamViewer」文字。"
+        #   "reason": "位於桌面左下角區域的 TeamViewer 應用程式圖示，具有藍色背景與白色雙箭頭標誌，下方標註「TeamViewer」文字。"
         # }
 
 
