@@ -1,121 +1,63 @@
-# autogen_setup.py
-import os
+# run_team.py  —  AutoGen AgentChat v0.4+ 版本
+import asyncio
 from pathlib import Path
 
-import autogen
+from autogen_agentchat.agents import AssistantAgent
+from autogen_agentchat.messages import TextMessage
+from autogen_agentchat.teams import RoundRobinGroupChat
+from autogen_ext.models.openai import OpenAIChatCompletionClient
 
-from tools import (
-    tool_capture_prescreenshot,
-    tool_click,
-    tool_double_click,
-    tool_press_key,
-    tool_right_click,
-    tool_sleep,
-    tool_type_text,
+PROMPTS_DIR = Path("prompts")
+def load(name: str) -> str:
+    return (PROMPTS_DIR / name).read_text(encoding="utf-8")
+
+# 1) 準備模型（可改成你偏好的 4o/4.1-mini 等）
+model = OpenAIChatCompletionClient(model="gpt-4o-2024-08-06")  # 會讀 OPENAI_API_KEY
+
+# 2) 建立五個角色（用你的檔案當 system_message）
+orchestrator = AssistantAgent(
+    name="orchestrator",
+    model_client=model,
+    system_message=load("orchestrator.md"),
+)
+planner = AssistantAgent(
+    name="planner",
+    model_client=model,
+    system_message=load("planner.md"),
+)
+operator = AssistantAgent(
+    name="operator",
+    model_client=model,
+    system_message=load("operator.md"),
+)
+ui_verifier = AssistantAgent(
+    name="ui_verifier",
+    model_client=model,
+    system_message=load("ui_verifier.md"),
+)
+bbox_getter = AssistantAgent(
+    name="bbox_getter",
+    model_client=model,                # 若你有影像模型，可替換成該供應商的 model_client
+    system_message=load("bbox_getter.md"),
 )
 
-# ========= 讀取本地 Prompts =========
-BASE = Path(__file__).parent
-PROMPTS_DIR = BASE / "prompts"
+# 3) 把五個 agent 放進一個 RoundRobin 團隊
+team = RoundRobinGroupChat([orchestrator, planner, operator, ui_verifier, bbox_getter])
 
-def load_prompt(name: str) -> str:
-    # e.g., name="orchestrator.md"
-    p = PROMPTS_DIR / name
-    return p.read_text(encoding="utf-8")
-
-# ========= LLM 設定 =========
-# 依你的實際供應商填入 API Key；以下示範同時準備「推理模型」與「影像模型」兩組 config_list
-openai_cfg = [{
-    "model": os.getenv("REASONING_MODEL", "gpt-4o-mini"),
-    "api_key": os.getenv("OPENAI_API_KEY"),
-    "temperature": 0.1,
-}]
-vision_cfg = [{
-    "model": os.getenv("VISION_MODEL", "qwen-2.5-vl"),
-    "api_key": os.getenv("QWEN_API_KEY"),
-    # 可按供應商需求加入 "api_type": "dashscope" 等欄位
-    "temperature": 0.0,
-}]
-
-reasoning_llm = {"config_list": openai_cfg}
-vision_llm    = {"config_list": vision_cfg}
-
-
-# ========= 建立 Agents（system_message 直接讀檔） =========
-def make_agents():
-    orchestrator = autogen.AssistantAgent(
-        name="orchestrator",
-        system_message=load_prompt("orchestrator.md"),
-        llm_config=reasoning_llm,
+async def main():
+    # 4) 發任務（你可以把 User 指令寫得更具體；這裡僅為示例）
+    task = TextMessage(
+        content="請將『測試小畫家是否正常』轉為 test case 並依流程執行；"
+                "原子操作由 operator；執行前/後由 ui_verifier；"
+                "需要座標時 operator 透過 bbox_getter 取得；"
+                "最後 orchestrator 回傳單一 JSON 總結。",
+        source="user",
     )
+    result = await team.run(task=task)
+    # 5) 取得所有訊息或從 result 裡擷取 orchestrator 的最終 JSON
+    for m in result.messages:
+        if m.source == "orchestrator":
+            print(m.content)
 
-    planner = autogen.AssistantAgent(
-        name="planner",
-        system_message=load_prompt("planner.md"),
-        llm_config=reasoning_llm,
-    )
-
-    ui_verifier = autogen.AssistantAgent(
-        name="ui_verifier",
-        system_message=load_prompt("ui_verifier.md"),
-        llm_config=reasoning_llm,
-    )
-
-    bbox_getter = autogen.AssistantAgent(
-        name="bbox_getter",
-        system_message=load_prompt("bbox_getter.md"),
-        llm_config=vision_llm,  # 影像模型
-    )
-
-    # Operator 綁定工具（這裡只示範幾個；你可擴充成完整工具集）
-    operator = autogen.AssistantAgent(
-        name="operator",
-        system_message=load_prompt("operator.md"),
-        llm_config=reasoning_llm,
-        tools=[
-            autogen.Tool(name="click",         func=tool_click),
-            autogen.Tool(name="double_click",  func=tool_double_click),
-            autogen.Tool(name="right_click",   func=tool_right_click),
-            autogen.Tool(name="type_text",     func=tool_type_text),
-            autogen.Tool(name="press_key",     func=tool_press_key),
-            autogen.Tool(name="sleep",         func=tool_sleep),
-            autogen.Tool(name="capture_pre",   func=tool_capture_prescreenshot),
-            # 提醒：bbox_getter 不是工具函式，operator 內部需「透過對話」呼叫 bbox_getter 取得座標
-        ],
-    )
-
-    return orchestrator, planner, operator, ui_verifier, bbox_getter
-
-# ========= 建立 GroupChat =========
-def make_group():
-    orchestrator, planner, operator, ui_verifier, bbox_getter = make_agents()
-    group = autogen.GroupChat(
-        agents=[orchestrator, planner, operator, ui_verifier, bbox_getter],
-        messages=[],
-        max_round=60,
-        speaker_selection_method="auto",
-    )
-    manager = autogen.GroupChatManager(groupchat=group, llm_config=reasoning_llm)
-    return manager
-
-# ========= 端到端示例：給一段任務說明，讓 orchestrator 帶著大家跑 =========
 if __name__ == "__main__":
-    manager = make_group()
-
-    # 你可以建立一個 User 代理來注入任務
-    user = autogen.UserProxyAgent(
-        name="user",
-        human_input_mode="NEVER",
-        code_execution_config=False,
-    )
-
-    # 範例任務：測試 Paint 是否正常（或任意控制任務）
-    # 這裡不放任何 prompt 內容，純下發需求；各角色會從 prompts/*.md 讀取 system prompt
-    task = (
-        "請將『測試小畫家是否正常』轉為 test case，並依步驟執行；"
-        "所有原子操作由 operator 執行；執行前/後均由 ui_verifier 判斷；"
-        "需要座標時 operator 請向 bbox_getter 取得 bbox；"
-        "最終由 orchestrator 回傳單一 JSON 總結。"
-    )
-
-    user.initiate_chat(manager, message=task)
+    asyncio.run(main())
