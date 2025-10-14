@@ -1,22 +1,36 @@
 # autogen_setup.py
-from typing import Any, Dict
-
-
+from typing import Any, Dict, Literal
 from pathlib import Path
 import subprocess
+import time
 import image_lib
 
-SCRIPT_FOLDER = (Path(__file__).parent / "scripts").resolve()
+SCRIPT_FOLDER: Path = (Path(__file__).parent / "scripts").resolve()
+KeyName = Literal["up", "down", "left", "right", "win", "enter", "esc"]
 
 
 def screenshot() -> str:
-    """screenshot and return base64 string"""
+    """
+    Take a screenshot of the current screen and return it as a base64-encoded string.
+
+    Usage:
+        - Call this function when you need a screenshot after an operation.
+        - No parameters required.
+        - Returns a base64-encoded string of the image.
+    """
     temp_dir = Path("C:/tmp_screenshots")
     temp_dir.mkdir(parents=True, exist_ok=True)
 
-    script = SCRIPT_FOLDER / "screenshot.ps1"
+    script: Path = SCRIPT_FOLDER / "screenshot.ps1"
     result = subprocess.run(
-        ["powershell", "-File", str(script)],
+        [
+            "powershell",
+            "-File",
+            str(script),
+            "-ExecutionPolicy",
+            "Bypass",
+            "-NoProfile",
+        ],
         capture_output=True,
         text=True,
         cwd=temp_dir,
@@ -24,18 +38,29 @@ def screenshot() -> str:
     if result.returncode != 0:
         raise RuntimeError(f"Error executing screenshot: {result.stderr}")
 
-    filepath = result.stdout.strip()
-    if not Path(filepath).is_file():
+    filepath = Path(result.stdout.strip())
+    if not filepath.is_file():
         raise FileNotFoundError(f"Screenshot file not found: {filepath}")
 
+    return filepath
     return image_lib.image_to_base64(filepath)
 
 
-def on_click_screenshot(x: int, y: int) -> Dict[str, Any]:
-    script = SCRIPT_FOLDER / "uut_op.ps1"
+def mouse_click(x: int, y: int) -> Dict[str, Any]:
+    """
+    Perform a single left mouse click at the given screen coordinates.
+
+    Usage:
+        mouse_click(500, 400)
+        → Clicks once at (500, 400) and returns a result dict with screenshot.
+    """
+    script: Path = SCRIPT_FOLDER / "uut_op.ps1"
     result = subprocess.run(
         [
             "powershell",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-NoProfile",
             "-File",
             str(script),
             "-operation",
@@ -48,76 +73,231 @@ def on_click_screenshot(x: int, y: int) -> Dict[str, Any]:
         capture_output=True,
         text=True,
     )
+    time.sleep(1)
+    screenshot_base64: str = screenshot()
+
     if result.returncode != 0:
         return {
             "result": False,
             "is_error": True,
             "reason": f"Error executing click: {result.stderr}",
-            "screenshot": {"path": ""},
+            "screenshot": {"base64": screenshot_base64},
         }
 
-
-def tool_click(x: int, y: int) -> Dict[str, Any]:
-    # TODO: 實作你的滑鼠點擊並截圖；回傳 post-screenshot 路徑
     return {
         "result": True,
         "is_error": False,
         "reason": f"Clicked ({x},{y})",
-        "screenshot": {"path": "C:/tmp/post_click.png"},
+        "screenshot": {"base64": screenshot_base64},
     }
 
 
-def tool_double_click(x: int, y: int) -> Dict[str, Any]:
+def mouse_double_click(x: int, y: int) -> Dict[str, Any]:
+    """
+    Perform a double left mouse click at the given coordinates.
+
+    Usage:
+        mouse_double_click(300, 400)
+        → Double-clicks at (300, 400) and returns a result dict with screenshot.
+    """
+    script: Path = SCRIPT_FOLDER / "uut_op.ps1"
+    result = subprocess.run(
+        [
+            "powershell",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-NoProfile",
+            "-File",
+            str(script),
+            "-operation",
+            "double",
+            "-x",
+            str(x),
+            "-y",
+            str(y),
+        ],
+        capture_output=True,
+        text=True,
+    )
+    time.sleep(1)
+    screenshot_base64: str = screenshot()
+
+    if result.returncode != 0:
+        return {
+            "result": False,
+            "is_error": True,
+            "reason": f"Error executing double_click: {result.stderr}",
+            "screenshot": {"base64": screenshot_base64},
+        }
+
     return {
         "result": True,
         "is_error": False,
-        "reason": f"DoubleClicked ({x},{y})",
-        "screenshot": {"path": "C:/tmp/post_doubleclick.png"},
+        "reason": f"Double Clicked ({x},{y})",
+        "screenshot": {"base64": screenshot_base64},
     }
 
 
-def tool_right_click(x: int, y: int) -> Dict[str, Any]:
+def mouse_right_click(x: int, y: int) -> Dict[str, Any]:
+    """
+    Perform a right mouse click at the given coordinates.
+
+    Usage:
+        mouse_right_click(600, 300)
+        → Right-clicks at (600, 300) and returns a result dict with screenshot.
+    """
+    script: Path = SCRIPT_FOLDER / "uut_op.ps1"
+    result = subprocess.run(
+        [
+            "powershell",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-NoProfile",
+            "-File",
+            str(script),
+            "-operation",
+            "right",
+            "-x",
+            str(x),
+            "-y",
+            str(y),
+        ],
+        capture_output=True,
+        text=True,
+    )
+    time.sleep(1)
+    screenshot_base64: str = screenshot()
+
+    if result.returncode != 0:
+        return {
+            "result": False,
+            "is_error": True,
+            "reason": f"Error executing right_click: {result.stderr}",
+            "screenshot": {"base64": screenshot_base64},
+        }
+
     return {
         "result": True,
         "is_error": False,
-        "reason": f"RightClicked ({x},{y})",
-        "screenshot": {"path": "C:/tmp/post_rightclick.png"},
+        "reason": f"Right Clicked ({x},{y})",
+        "screenshot": {"base64": screenshot_base64},
     }
 
 
-def tool_type_text(text: str) -> Dict[str, Any]:
+def keyboard_input(
+    text: str, click_before_type: bool = False, x: int = 0, y: int = 0
+) -> Dict[str, Any]:
+    """
+    Type the given text using the keyboard, optionally clicking a position before typing.
+
+    Usage:
+        keyboard_input("hello world")
+        → Types "hello world".
+
+        keyboard_input("username", click_before_type=True, x=400, y=500)
+        → Clicks at (400, 500) first, then types "username".
+    """
+    script: Path = SCRIPT_FOLDER / "uut_op.ps1"
+    command = [
+        "powershell",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-NoProfile",
+        "-File",
+        str(script),
+        "-operation",
+        "type",
+        "-text",
+        text,
+    ]
+
+    if click_before_type:
+        command += ["-click_before_type", "-x", str(x), "-y", str(y), "-text", text]
+
+    result = subprocess.run(command, capture_output=True, text=True)
+    time.sleep(1)
+    screenshot_base64: str = screenshot()
+
+    if result.returncode != 0:
+        return {
+            "result": False,
+            "is_error": True,
+            "reason": f"Error executing keyboard_input: {result.stderr}",
+            "screenshot": {"base64": screenshot_base64},
+        }
+
     return {
         "result": True,
         "is_error": False,
-        "reason": f'Typed "{text}"',
-        "screenshot": {"path": "C:/tmp/post_type.png"},
+        "reason": f"Typed '{text}'",
+        "screenshot": {"base64": screenshot_base64},
     }
 
 
-def tool_press_key(key: str) -> Dict[str, Any]:
+def keyboard_hotkey(key: KeyName) -> Dict[str, Any]:
+    """
+    Simulate pressing a specific hotkey (e.g., arrows, Win, Enter, Esc).
+
+    Usage:
+        keyboard_hotkey("win")
+        → Presses the Windows key.
+
+        keyboard_hotkey("up")
+        → Presses the Up arrow key.
+    """
+    script: Path = SCRIPT_FOLDER / "send_key.ps1"
+    result = subprocess.run(
+        [
+            "powershell",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-NoProfile",
+            "-File",
+            str(script),
+            "-key",
+            key,
+        ],
+        capture_output=True,
+        text=True,
+    )
+    time.sleep(1)
+    screenshot_base64: str = screenshot()
+
+    if result.returncode != 0:
+        return {
+            "result": False,
+            "is_error": True,
+            "reason": f"Error executing keyboard_hotkey: {result.stderr}",
+            "screenshot": {"base64": screenshot_base64},
+        }
+
     return {
         "result": True,
         "is_error": False,
-        "reason": f"Pressed {key}",
-        "screenshot": {"path": "C:/tmp/post_presskey.png"},
+        "reason": f"Pressed hotkey '{key}'",
+        "screenshot": {"base64": screenshot_base64},
     }
 
 
-def tool_sleep(seconds: float) -> Dict[str, Any]:
-    # 建議真的 sleep，再截圖
-    # import time; time.sleep(seconds)
+def sleep(seconds: int) -> Dict[str, Any]:
+    """
+    Pause execution for a specified duration and capture a screenshot afterward.
+
+    Usage:
+        sleep(2)
+        → Waits for 2 seconds and returns a screenshot of the current screen.
+    """
+    time.sleep(seconds)
+    screenshot_base64: str = screenshot()
+
     return {
         "result": True,
         "is_error": False,
-        "reason": f"Slept {seconds}s",
-        "screenshot": {"path": "C:/tmp/post_sleep.png"},
+        "reason": f"Slept for {seconds} seconds",
+        "screenshot": {"base64": screenshot_base64},
     }
-
-
-def tool_capture_prescreenshot() -> Dict[str, Any]:
-    # 若 operator 在呼叫 bbox_getter 前需要 pre-snap
-    return {"path": "C:/tmp/pre.png"}
 
 
 if __name__ == "__main__":
-    print(screenshot())
+    print(mouse_click(100, 200))
+    print(keyboard_hotkey("win"))

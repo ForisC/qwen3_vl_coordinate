@@ -23,7 +23,7 @@ param(
     [string]$operation,
 
     # For -operation type
-    [Parameter(Mandatory=123$false)]
+    [Parameter(Mandatory=$false)]
     [string]$text,
 
     # Milliseconds: wait after move, and double-click interval
